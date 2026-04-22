@@ -1,0 +1,83 @@
+name: Release App
+permissions:
+  contents: write
+
+# Triggers on the same version tags as release.yml
+on:
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
+
+jobs:
+  build-tauri:
+    name: build-tauri (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            tauri-args: --target universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - platform: windows-latest
+            tauri-args: ""
+            rust-targets: ""
+          - platform: ubuntu-22.04
+            tauri-args: ""
+            rust-targets: ""
+    runs-on: ${{ matrix.platform }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: >-
+            wasm32-unknown-unknown${{ matrix.rust-targets != '' && format(',{0}', matrix.rust-targets) || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            crates/gkill-app/ui -> target
+
+      - name: Install Linux system deps
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install Trunk
+        run: cargo binstall trunk --no-confirm
+
+      # Wait for cargo-dist (release.yml) to create the GitHub Release first
+      - name: Wait for GitHub Release
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" --json tagName -q '.tagName' > /dev/null 2>&1; then
+              echo "Release $TAG is ready."
+              exit 0
+            fi
+            echo "Waiting for release $TAG... ($i/30, retrying in 20s)"
+            sleep 20
+          done
+          echo "::warning::Release not found after 10 minutes, proceeding anyway."
+
+      - name: Build Tauri app & upload to release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: crates/gkill-app
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.tauri-args }}
+          beforeBuildCommand: cd ui && trunk build --release
