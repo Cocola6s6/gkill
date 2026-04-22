@@ -69,6 +69,10 @@ jobs:
           done
           echo "::warning::Release not found after 10 minutes, proceeding anyway."
 
+      - name: Build frontend (WASM)
+        working-directory: crates/gkill-app/ui
+        run: trunk build --release
+
       - name: Build Tauri app & upload to release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -80,4 +84,3 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.tauri-args }}
-          beforeBuildCommand: cd ui && trunk build --release
