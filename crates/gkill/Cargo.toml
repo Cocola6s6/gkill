@@ -1,0 +1,24 @@
+[package]
+name = "gkill"
+version = "0.1.0"
+edition = "2024"
+description = "SkillHub command line client"
+readme = "../../README.md"
+repository = "https://github.com/Cocola6s6/gkill.git"
+license = "MIT"
+
+[[bin]]
+name = "gkill"
+path = "src/main.rs"
+
+[dependencies]
+gkill-core = { path = "../gkill-core" }
+clap         = { workspace = true }
+tokio        = { workspace = true }
+serde_json   = { workspace = true }
+anyhow       = { workspace = true }
+dialoguer    = { workspace = true }
+indicatif    = { workspace = true }
+ratatui      = { workspace = true }
+crossterm    = { workspace = true }
+dirs         = { workspace = true }

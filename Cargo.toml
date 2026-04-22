@@ -1,0 +1,24 @@
+[workspace]
+members = ["crates/gkill-core", "crates/gkill", "crates/gkill-app"]
+resolver = "2"
+
+[workspace.dependencies]
+clap       = { version = "4", features = ["derive"] }
+reqwest    = { version = "0.12", default-features = false, features = ["rustls-tls", "multipart", "json", "stream"] }
+tokio      = { version = "1", features = ["full"] }
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+zip        = "2"
+ratatui    = "0.29"
+crossterm  = "0.28"
+dialoguer  = "0.11"
+indicatif  = "0.17"
+dirs       = "5"
+anyhow     = "1"
+thiserror  = "2"
+bytes      = "1"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

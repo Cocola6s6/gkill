@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>gkill — SkillHub Desktop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+          },
+          colors: {
+            brand: {
+              start: '#6A6DFF',
+              end:   '#B85EFF',
+            },
+          },
+          borderRadius: {
+            DEFAULT: '0.75rem',
+            sm: 'calc(0.75rem - 4px)',
+            md: 'calc(0.75rem - 2px)',
+            lg: '0.75rem',
+            xl: 'calc(0.75rem + 4px)',
+            '2xl': 'calc(0.75rem + 8px)',
+          },
+        }
+      }
+    }
+  </script>
+  <style>
+    :root {
+      --primary: #6A6DFF;
+      --accent:  #B85EFF;
+      --bg:      #f8fafc;
+      --card:    #ffffff;
+      --border:  #e4e7ef;
+      --text:    #1a2236;
+      --muted:   #64748b;
+      --brand-gradient: linear-gradient(135deg, #6A6DFF 0%, #B85EFF 100%);
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    .brand-gradient { background: var(--brand-gradient); }
+    .brand-text {
+      background: var(--brand-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .tab-active {
+      background: var(--brand-gradient);
+      color: #fff;
+    }
+    .btn-primary {
+      background: var(--brand-gradient);
+      color: #fff;
+      border-radius: 0.75rem;
+      font-weight: 500;
+      transition: opacity .15s;
+    }
+    .btn-primary:hover { opacity: 0.88; }
+    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+    }
+    input, select {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      color: var(--text);
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(106,109,255,.15);
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d1d5e0; border-radius: 3px; }
+  </style>
+  <link data-trunk rel="rust" data-bin="gkill-ui" />
+</head>
+<body>
+</body>
+</html>
