@@ -19,3 +19,5 @@ create-release = true
 install-path = "CARGO_HOME"
 # PRs only run planning jobs to verify the release graph
 pr-run-mode = "plan"
+# Build only release-required Cargo packages instead of `--workspace`
+precise-builds = true
