@@ -108,3 +108,16 @@ pub async fn update_skill(
         .await
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn get_skill_markdown(
+    slug: String,
+    namespace: String,
+    version: Option<String>,
+    registry: Option<String>,
+) -> Result<String, String> {
+    let c = client(registry);
+    install::fetch_skill_markdown(&c, &slug, &namespace, version.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}

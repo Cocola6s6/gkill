@@ -1,5 +1,7 @@
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+use std::cell::Cell;
+use std::rc::Rc;
 use crate::api;
 use crate::state::{AppCtx, InstalledInfo, UpdateCandidate};
 
@@ -10,16 +12,30 @@ pub fn InstalledPage() -> View {
     let list: Signal<Vec<InstalledInfo>>    = create_signal(vec![]);
     let updates: Signal<Vec<UpdateCandidate>> = create_signal(vec![]);
     let checking = create_signal(false);
+    let alive = Rc::new(Cell::new(true));
 
-    let refresh = move || {
-        spawn_local(async move {
-            if let Ok(items) = api::list_installed().await {
-                list.set(items);
-            }
-        });
-    };
+    on_cleanup({
+        let alive = alive.clone();
+        move || alive.set(false)
+    });
 
-    create_effect(move || { refresh(); });
+    create_effect({
+        let alive = alive.clone();
+        move || {
+            let alive = alive.clone();
+            spawn_local(async move {
+                if let Ok(items) = api::list_installed().await {
+                    if alive.get() {
+                        list.set(items);
+                    }
+                }
+            });
+        }
+    });
+
+    let alive_for_check_updates = alive.clone();
+    let alive_for_update_items = alive.clone();
+    let alive_for_installed_items = alive.clone();
 
     view! {
         div(class="flex flex-col h-full") {
@@ -36,15 +52,25 @@ pub fn InstalledPage() -> View {
                 }
                 button(
                     class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg border border-[#e4e7ef] text-sm text-[#64748b] hover:bg-[#f8fafc] font-medium",
-                    on:click=move |_| {
-                        checking.set(true);
-                        spawn_local(async move {
-                            match api::find_updates().await {
-                                Ok(u)  => updates.set(u),
-                                Err(e) => ctx.toast.set(Some(format!("❌ {e}"))),
-                            }
-                            checking.set(false);
-                        });
+                    on:click={
+                        let alive = alive_for_check_updates.clone();
+                        move |_| {
+                            let alive = alive.clone();
+                            checking.set(true);
+                            spawn_local(async move {
+                                match api::find_updates().await {
+                                    Ok(u)  => {
+                                        if alive.get() {
+                                            updates.set(u);
+                                        }
+                                    }
+                                    Err(e) => ctx.toast.set(Some(format!("❌ {e}"))),
+                                }
+                                if alive.get() {
+                                    checking.set(false);
+                                }
+                            });
+                        }
                     }
                 ) {
                     (if checking.get() {
@@ -59,6 +85,7 @@ pub fn InstalledPage() -> View {
             div(class="flex-1 overflow-y-auto px-6 py-5 space-y-3") {
                 // Update banner
                 (if !updates.get_clone().is_empty() {
+                    let alive_for_update_items = alive_for_update_items.clone();
                     view! {
                         div(class="card p-4 border-[#6A6DFF]/30 bg-[#f5f5ff]") {
                             div(class="flex items-center gap-2 text-sm font-semibold text-[#6A6DFF] mb-3") {
@@ -71,6 +98,7 @@ pub fn InstalledPage() -> View {
                                     let sl     = u.slug.clone();
                                     let ns     = u.namespace.clone();
                                     let sl_disp = sl.clone();
+                                    let alive_for_item = alive_for_update_items.clone();
                                     view! {
                                         div(class="flex items-center justify-between py-2 border-b border-[#e4e7ef] last:border-0") {
                                             div {
@@ -81,14 +109,26 @@ pub fn InstalledPage() -> View {
                                             }
                                             button(
                                                 class="btn-primary px-3 py-1 text-xs",
-                                                on:click=move |_| {
-                                                    let s = sl.clone(); let n = ns.clone();
-                                                    spawn_local(async move {
-                                                        match api::update_skill(&s, &n).await {
-                                                            Ok(_) => { ctx.toast.set(Some(format!("✅ 更新 {s} 完成"))); refresh(); }
-                                                            Err(e) => ctx.toast.set(Some(format!("❌ {e}"))),
-                                                        }
-                                                    });
+                                                on:click={
+                                                    let alive = alive_for_item.clone();
+                                                    move |_| {
+                                                        let s = sl.clone();
+                                                        let n = ns.clone();
+                                                        let alive = alive.clone();
+                                                        spawn_local(async move {
+                                                            match api::update_skill(&s, &n).await {
+                                                                Ok(_) => {
+                                                                    ctx.toast.set(Some(format!("✅ 更新 {s} 完成")));
+                                                                    if let Ok(items) = api::list_installed().await {
+                                                                        if alive.get() {
+                                                                            list.set(items);
+                                                                        }
+                                                                    }
+                                                                }
+                                                                Err(e) => ctx.toast.set(Some(format!("❌ {e}"))),
+                                                            }
+                                                        });
+                                                    }
                                                 }
                                             ) { "更新" }
                                         }
@@ -108,6 +148,7 @@ pub fn InstalledPage() -> View {
                         }
                     }
                 } else {
+                    let alive_for_installed_items = alive_for_installed_items.clone();
                     view! {
                         Indexed(
                             list=list,
@@ -116,6 +157,7 @@ pub fn InstalledPage() -> View {
                                 let ns      = item.namespace.clone();
                                 let sl_disp = sl.clone();
                                 let ns_disp = ns.clone();
+                                let alive_for_item = alive_for_installed_items.clone();
                                 view! {
                                     div(class="card p-4 flex items-center justify-between hover:shadow-md transition-shadow") {
                                         div {
@@ -131,14 +173,26 @@ pub fn InstalledPage() -> View {
                                         }
                                         button(
                                             class="px-3 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 text-xs font-medium transition-colors",
-                                            on:click=move |_| {
-                                                let s = sl.clone(); let n = ns.clone();
-                                                spawn_local(async move {
-                                                    match api::remove_skill(&s, &n).await {
-                                                        Ok(_)  => { ctx.toast.set(Some(format!("🗑️ 已移除 {s}"))); refresh(); }
-                                                        Err(e) => ctx.toast.set(Some(format!("❌ {e}"))),
-                                                    }
-                                                });
+                                            on:click={
+                                                let alive = alive_for_item.clone();
+                                                move |_| {
+                                                    let s = sl.clone();
+                                                    let n = ns.clone();
+                                                    let alive = alive.clone();
+                                                    spawn_local(async move {
+                                                        match api::remove_skill(&s, &n).await {
+                                                            Ok(_)  => {
+                                                                ctx.toast.set(Some(format!("🗑️ 已移除 {s}")));
+                                                                if let Ok(items) = api::list_installed().await {
+                                                                    if alive.get() {
+                                                                        list.set(items);
+                                                                    }
+                                                                }
+                                                            }
+                                                            Err(e) => ctx.toast.set(Some(format!("❌ {e}"))),
+                                                        }
+                                                    });
+                                                }
                                             }
                                         ) { "移除" }
                                     }

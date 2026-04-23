@@ -3,6 +3,7 @@ mod pages;
 mod state;
 
 use sycamore::prelude::*;
+use gloo_timers::future::TimeoutFuture;
 use wasm_bindgen_futures::spawn_local;
 use pages::{installed::InstalledPage, publish::PublishPage, search::SearchPage, settings::SettingsPage};
 use state::{AppCtx, Page};
@@ -59,7 +60,7 @@ fn App() -> View {
 
             // ── Page content ────────────────────────────────────────────
             div(class="flex-1 overflow-hidden") {
-                (match ctx.page.get() {
+                (match ctx.page.get_clone() {
                     Page::Search    => view! { SearchPage {} },
                     Page::Installed => view! { InstalledPage {} },
                     Page::Publish   => view! { PublishPage {} },
@@ -84,7 +85,7 @@ fn App() -> View {
 #[component(inline_props)]
 fn TabBtn(page: Page, label: &'static str, icon: &'static str) -> View {
     let ctx = use_context::<AppCtx>();
-    let is_active = create_memo(move || ctx.page.get() == page);
+    let is_active = create_memo(move || ctx.page.get_clone() == page);
     view! {
         button(
             class=format!(
@@ -95,7 +96,13 @@ fn TabBtn(page: Page, label: &'static str, icon: &'static str) -> View {
                     "text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#1a2236]"
                 }
             ),
-            on:click=move |_| ctx.page.set(page)
+            on:click=move |_| {
+                let page_signal = ctx.page;
+                spawn_local(async move {
+                    TimeoutFuture::new(0).await;
+                    page_signal.set(page);
+                });
+            }
         ) {
             span { (icon) }
             span { (label) }

@@ -6,14 +6,129 @@ use crate::state::{AgentInfo, AuthStatus, InstalledInfo, SkillPage, UpdateCandid
 const DEFAULT_AGENT: &str = "claude-code";
 const DEFAULT_MODE: &str = "global";
 
-#[wasm_bindgen(inline_js = r#"
+#[wasm_bindgen(inline_js = r###"
 export function tauri_invoke(cmd, args) {
     return window.__TAURI_INTERNALS__.invoke(cmd, args);
 }
-"#)]
+
+function escapeHtml(s) {
+    return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
+function escapeAttr(s) {
+    return s.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function safeUrl(url) {
+    const u = String(url || "").trim();
+    if (/^https?:\/\//i.test(u)) return u;
+    return "#";
+}
+
+function renderInline(text) {
+    let out = escapeHtml(text);
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => {
+        const safe = escapeAttr(safeUrl(href));
+        return `<a href="${safe}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    });
+    return out;
+}
+
+function renderSimpleMarkdown(md) {
+    const lines = String(md || "").replace(/\r\n/g, "\n").split("\n");
+    let html = "";
+    let inCode = false;
+    let inUl = false;
+    let inOl = false;
+
+    function closeLists() {
+        if (inUl) { html += "</ul>"; inUl = false; }
+        if (inOl) { html += "</ol>"; inOl = false; }
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        if (trimmed.startsWith("```")) {
+            closeLists();
+            if (!inCode) {
+                inCode = true;
+                html += "<pre><code>";
+            } else {
+                inCode = false;
+                html += "</code></pre>";
+            }
+            continue;
+        }
+
+        if (inCode) {
+            html += escapeHtml(line) + "\n";
+            continue;
+        }
+
+        if (!trimmed) {
+            closeLists();
+            continue;
+        }
+
+        if (/^#{1,6}\s+/.test(trimmed)) {
+            closeLists();
+            const level = trimmed.match(/^#+/)[0].length;
+            const content = trimmed.replace(/^#{1,6}\s+/, "");
+            html += `<h${level}>${renderInline(content)}</h${level}>`;
+            continue;
+        }
+
+        if (/^>\s+/.test(trimmed)) {
+            closeLists();
+            html += `<blockquote>${renderInline(trimmed.replace(/^>\s+/, ""))}</blockquote>`;
+            continue;
+        }
+
+        if (/^[-*+]\s+/.test(trimmed)) {
+            if (inOl) { html += "</ol>"; inOl = false; }
+            if (!inUl) { html += "<ul>"; inUl = true; }
+            html += `<li>${renderInline(trimmed.replace(/^[-*+]\s+/, ""))}</li>`;
+            continue;
+        }
+
+        if (/^\d+\.\s+/.test(trimmed)) {
+            if (inUl) { html += "</ul>"; inUl = false; }
+            if (!inOl) { html += "<ol>"; inOl = true; }
+            html += `<li>${renderInline(trimmed.replace(/^\d+\.\s+/, ""))}</li>`;
+            continue;
+        }
+
+        if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
+            closeLists();
+            html += "<hr />";
+            continue;
+        }
+
+        closeLists();
+        html += `<p>${renderInline(trimmed)}</p>`;
+    }
+
+    closeLists();
+    if (inCode) html += "</code></pre>";
+    return html;
+}
+
+export function render_markdown_html(md) {
+    return renderSimpleMarkdown(md);
+}
+"###)]
 extern "C" {
     #[wasm_bindgen(catch)]
     fn tauri_invoke(cmd: &str, args: JsValue) -> Result<js_sys::Promise, JsValue>;
+    fn render_markdown_html(md: &str) -> String;
 }
 
 async fn invoke<A: Serialize, R: serde::de::DeserializeOwned>(cmd: &str, args: A) -> Result<R, String> {
@@ -92,6 +207,11 @@ pub async fn update_skill(slug: &str, namespace: &str) -> Result<(), String> {
     invoke_void("update_skill", A { slug, namespace, agent: DEFAULT_AGENT, mode: DEFAULT_MODE, registry: None }).await
 }
 
+pub async fn get_skill_markdown(slug: &str, namespace: &str, version: Option<&str>) -> Result<String, String> {
+    #[derive(Serialize)] struct A<'a> { slug: &'a str, namespace: &'a str, version: Option<&'a str>, registry: Option<String> }
+    invoke("get_skill_markdown", A { slug, namespace, version, registry: None }).await
+}
+
 pub async fn publish_skill(path: &str, namespace: &str, visibility: &str) -> Result<(), String> {
     #[derive(serde::Serialize)] struct A<'a> { path: &'a str, namespace: &'a str, visibility: &'a str, registry: Option<String> }
     invoke_void("publish_skill", A { path, namespace, visibility, registry: None }).await
@@ -101,4 +221,8 @@ pub async fn pick_folder() -> Result<Option<String>, String> {
     #[derive(serde::Serialize)] struct Empty {}
     let s: String = invoke("pick_folder", Empty {}).await?;
     if s.is_empty() { Ok(None) } else { Ok(Some(s)) }
+}
+
+pub fn render_markdown(md: &str) -> String {
+    render_markdown_html(md)
 }

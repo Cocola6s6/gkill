@@ -1,5 +1,7 @@
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+use std::cell::Cell;
+use std::rc::Rc;
 use crate::api;
 use crate::state::AppCtx;
 
@@ -12,6 +14,12 @@ pub fn SettingsPage() -> View {
     let token   = create_signal(String::new());
     let busy    = create_signal(false);
     let err: Signal<Option<String>> = create_signal(None);
+    let alive = Rc::new(Cell::new(true));
+
+    on_cleanup({
+        let alive = alive.clone();
+        move || alive.set(false)
+    });
 
     view! {
         div(class="flex flex-col h-full bg-[#f8fafc]") {
@@ -40,18 +48,32 @@ pub fn SettingsPage() -> View {
                             button(
                                 class="w-full py-2 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 text-sm font-medium transition-colors disabled:opacity-50",
                                 disabled=busy.get(),
-                                on:click=move |_| {
-                                    busy.set(true);
-                                    spawn_local(async move {
-                                        match api::logout().await {
-                                            Ok(_) => {
-                                                ctx.toast.set(Some("✅ 已退出登录".into()));
-                                                if let Ok(s) = api::get_auth_status().await { ctx.auth.set(s); }
+                                on:click={
+                                    let alive = alive.clone();
+                                    move |_| {
+                                        let alive = alive.clone();
+                                        busy.set(true);
+                                        spawn_local(async move {
+                                            match api::logout().await {
+                                                Ok(_) => {
+                                                    ctx.toast.set(Some("✅ 已退出登录".into()));
+                                                    if let Ok(s) = api::get_auth_status().await {
+                                                        if alive.get() {
+                                                            ctx.auth.set(s);
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    if alive.get() {
+                                                        err.set(Some(e));
+                                                    }
+                                                }
                                             }
-                                            Err(e) => err.set(Some(e)),
-                                        }
-                                        busy.set(false);
-                                    });
+                                            if alive.get() {
+                                                busy.set(false);
+                                            }
+                                        });
+                                    }
                                 }
                             ) { (if busy.get() { "退出中…" } else { "退出登录" }) }
                         }
@@ -89,21 +111,37 @@ pub fn SettingsPage() -> View {
                             button(
                                 class="w-full btn-primary py-2.5 mt-3 text-sm font-semibold disabled:opacity-50",
                                 disabled=busy.get() || token.get_clone().trim().is_empty(),
-                                on:click=move |_| {
-                                    let t = token.get_clone();
-                                    busy.set(true);
-                                    err.set(None);
-                                    spawn_local(async move {
-                                        match api::login(&t).await {
-                                            Ok(_) => {
-                                                ctx.toast.set(Some("✅ 登录成功".into()));
-                                                token.set(String::new());
-                                                if let Ok(s) = api::get_auth_status().await { ctx.auth.set(s); }
+                                on:click={
+                                    let alive = alive.clone();
+                                    move |_| {
+                                        let t = token.get_clone();
+                                        let alive = alive.clone();
+                                        busy.set(true);
+                                        err.set(None);
+                                        spawn_local(async move {
+                                            match api::login(&t).await {
+                                                Ok(_) => {
+                                                    ctx.toast.set(Some("✅ 登录成功".into()));
+                                                    if alive.get() {
+                                                        token.set(String::new());
+                                                    }
+                                                    if let Ok(s) = api::get_auth_status().await {
+                                                        if alive.get() {
+                                                            ctx.auth.set(s);
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    if alive.get() {
+                                                        err.set(Some(e));
+                                                    }
+                                                }
                                             }
-                                            Err(e) => err.set(Some(e)),
-                                        }
-                                        busy.set(false);
-                                    });
+                                            if alive.get() {
+                                                busy.set(false);
+                                            }
+                                        });
+                                    }
                                 }
                             ) { (if busy.get() { "验证中…" } else { "登录" }) }
                         }

@@ -45,6 +45,7 @@ pub fn run() {
             skills::remove_skill,
             skills::find_updates,
             skills::update_skill,
+            skills::get_skill_markdown,
             // publish
             publish::publish_skill,
         ])

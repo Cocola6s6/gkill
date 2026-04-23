@@ -4,6 +4,7 @@ use sycamore::prelude::*;
 // ─── Mirror types (match gkill-core serialisation) ──────────────────────
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct SkillItem {
     pub slug: String,
     pub display_name: Option<String>,

@@ -1,5 +1,7 @@
 use sycamore::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+use std::cell::Cell;
+use std::rc::Rc;
 use crate::api;
 use crate::state::AppCtx;
 
@@ -13,16 +15,35 @@ pub fn PublishPage() -> View {
     let path        = create_signal(String::new());
     let busy        = create_signal(false);
     let result: Signal<Option<Result<String, String>>> = create_signal(None);
+    let initialized = create_signal(false);
+    let alive = Rc::new(Cell::new(true));
 
-    // Load user's namespaces on mount
-    spawn_local(async move {
-        if let Ok(ns_list) = api::get_my_namespaces().await {
-            if !ns_list.is_empty() {
-                namespace.set(ns_list[0].clone());
-                namespaces.set(ns_list);
-            }
-        }
+    on_cleanup({
+        let alive = alive.clone();
+        move || alive.set(false)
     });
+
+    // Load user's namespaces only once after first render.
+    {
+        let alive_for_init = alive.clone();
+        create_effect(move || {
+        if !initialized.get() {
+            initialized.set(true);
+            let alive = alive_for_init.clone();
+            spawn_local(async move {
+                if let Ok(ns_list) = api::get_my_namespaces().await {
+                    if !alive.get() {
+                        return;
+                    }
+                    if !ns_list.is_empty() {
+                        namespace.set(ns_list[0].clone());
+                        namespaces.set(ns_list);
+                    }
+                }
+            });
+        }
+        });
+    }
 
     view! {
         div(class="flex flex-col h-full bg-[#f8fafc]") {
@@ -118,14 +139,22 @@ pub fn PublishPage() -> View {
                             )
                             button(
                                 class="shrink-0 px-3 py-2 rounded-lg border border-[#e4e7ef] text-sm text-[#64748b] hover:bg-[#f8fafc] font-medium",
-                                on:click=move |_| {
-                                    spawn_local(async move {
-                                        match api::pick_folder().await {
-                                            Ok(Some(p)) => path.set(p),
-                                            Ok(None) => {}
-                                            Err(e) => ctx.toast.set(Some(format!("❌ {e}"))),
-                                        }
-                                    });
+                                on:click={
+                                    let alive = alive.clone();
+                                    move |_| {
+                                        let alive = alive.clone();
+                                        spawn_local(async move {
+                                            match api::pick_folder().await {
+                                                Ok(Some(p)) => {
+                                                    if alive.get() {
+                                                        path.set(p);
+                                                    }
+                                                }
+                                                Ok(None) => {}
+                                                Err(e) => ctx.toast.set(Some(format!("❌ {e}"))),
+                                            }
+                                        });
+                                    }
                                 }
                             ) { "📂 选择" }
                         }
@@ -154,23 +183,35 @@ pub fn PublishPage() -> View {
                     button(
                         class="w-full btn-primary py-2.5 text-sm font-semibold disabled:opacity-50",
                         disabled=busy.get(),
-                        on:click=move |_| {
-                            let ns  = namespace.get_clone();
-                            let vis = visibility.get_clone();
-                            let p   = path.get_clone();
-                            busy.set(true);
-                            result.set(None);
-                            spawn_local(async move {
-                                let path_arg = if p.trim().is_empty() { "." } else { p.as_str() };
-                                match api::publish_skill(path_arg, &ns, &vis).await {
-                                    Ok(_) => {
-                                        result.set(Some(Ok(format!("发布成功（{}/{}）", ns, vis))));
-                                        ctx.toast.set(Some(format!("✅ 发布成功（{ns}）")));
+                        on:click={
+                            let alive = alive.clone();
+                            move |_| {
+                                let ns  = namespace.get_clone();
+                                let vis = visibility.get_clone();
+                                let p   = path.get_clone();
+                                let alive = alive.clone();
+                                busy.set(true);
+                                result.set(None);
+                                spawn_local(async move {
+                                    let path_arg = if p.trim().is_empty() { "." } else { p.as_str() };
+                                    match api::publish_skill(path_arg, &ns, &vis).await {
+                                        Ok(_) => {
+                                            if alive.get() {
+                                                result.set(Some(Ok(format!("发布成功（{}/{}）", ns, vis))));
+                                            }
+                                            ctx.toast.set(Some(format!("✅ 发布成功（{ns}）")));
+                                        }
+                                        Err(e) => {
+                                            if alive.get() {
+                                                result.set(Some(Err(e)));
+                                            }
+                                        }
                                     }
-                                    Err(e) => result.set(Some(Err(e))),
-                                }
-                                busy.set(false);
-                            });
+                                    if alive.get() {
+                                        busy.set(false);
+                                    }
+                                });
+                            }
                         }
                     ) {
                         (if busy.get() { "发布中…" } else { "发布 Skill" })

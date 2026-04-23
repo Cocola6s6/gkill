@@ -65,6 +65,27 @@ pub async fn install_skill(
     Ok(())
 }
 
+pub async fn fetch_skill_markdown(
+    client: &Client,
+    slug: &str,
+    namespace: &str,
+    version: Option<&str>,
+) -> Result<String> {
+    let detail = api::get_skill(client, namespace, slug).await?;
+    let resolved_version = if let Some(v) = version {
+        v.to_string()
+    } else {
+        detail
+            .published_version
+            .or(detail.headline_version)
+            .map(|v| v.version)
+            .ok_or_else(|| anyhow::anyhow!("skill '{}' 没有可用版本", slug))?
+    };
+
+    let zip_data = api::download_skill(client, namespace, slug, &resolved_version).await?;
+    read_skill_markdown_from_zip(&zip_data)
+}
+
 pub fn remove_skill(agent: &AgentConfig, mode: &str, slug: &str) -> Result<()> {
     let dir = skill_dir(agent, mode, slug);
     if !dir.exists() {
@@ -160,6 +181,48 @@ fn extract_zip(data: &Bytes, target_dir: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn read_skill_markdown_from_zip(data: &Bytes) -> Result<String> {
+    let cursor = std::io::Cursor::new(data.as_ref());
+    let mut archive = zip::ZipArchive::new(cursor)?;
+
+    let strip = {
+        let cursor2 = std::io::Cursor::new(data.as_ref());
+        let mut a2 = zip::ZipArchive::new(cursor2)?;
+        detect_strip_prefix(&mut a2)
+    };
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        if file.name().ends_with('/') {
+            continue;
+        }
+
+        let raw_name = file.name().to_string();
+        let rel: &str = if let Some(pfx) = &strip {
+            let prefix_slash = format!("{pfx}/");
+            let stripped = raw_name.strip_prefix(prefix_slash.as_str()).unwrap_or("");
+            if stripped.is_empty() {
+                continue;
+            }
+            stripped
+        } else {
+            raw_name.as_str()
+        };
+
+        if !is_safe_path(rel) {
+            bail!("ZIP 包含不安全路径: {}", rel);
+        }
+
+        if rel.eq_ignore_ascii_case("SKILL.md") {
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf)?;
+            return Ok(String::from_utf8_lossy(&buf).into_owned());
+        }
+    }
+
+    bail!("未在 skill 包中找到 SKILL.md")
 }
 
 pub fn is_safe_path(path: &str) -> bool {
